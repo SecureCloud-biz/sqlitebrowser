@@ -1068,12 +1068,6 @@ void MainWindow::executeQuery()
             // Get type
             QueryType query_part_type = getQueryType(queryPart.trimmed());
 
-            // SQLite returns SQLITE_DONE when a valid SELECT statement was executed but returned no results. To run into the branch that updates
-            // the status message and the table view anyway manipulate the status value here. This is also done for PRAGMA statements as they (sometimes)
-            // return rows just like SELECT statements, too.
-            if((query_part_type == SELECT || query_part_type == PRAGMA) && sql3status == SQLITE_DONE)
-                sql3status = SQLITE_ROW;
-
             // Are we querying some sort of data? Or are we setting some data?
             if(query_part_type == SELECT || query_part_type == EXPLAIN || (query_part_type == PRAGMA && !queryPart.contains('=')))
             {
