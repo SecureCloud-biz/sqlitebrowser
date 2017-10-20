@@ -926,6 +926,7 @@ MainWindow::QueryType MainWindow::getQueryType(const QString& query) const
     if(query.startsWith("UPDATE", Qt::CaseInsensitive)) return UPDATE;
     if(query.startsWith("DELETE", Qt::CaseInsensitive)) return DELETE;
     if(query.startsWith("CREATE", Qt::CaseInsensitive)) return CREATE;
+    if(query.startsWith("EXPLAIN", Qt::CaseInsensitive)) return EXPLAIN;
 
     return OTHER;
 }
@@ -1062,11 +1063,8 @@ void MainWindow::executeQuery()
         tail_length -= (tail - qbegin);
         int execution_end_index = execution_start_index + tail_length_before - tail_length;
 
-        if (sql3status == SQLITE_OK)
+        if(sql3status == SQLITE_OK)
         {
-            sql3status = sqlite3_step(vm);
-            sqlite3_finalize(vm);
-
             // Get type
             QueryType query_part_type = getQueryType(queryPart.trimmed());
 
@@ -1076,10 +1074,12 @@ void MainWindow::executeQuery()
             if((query_part_type == SELECT || query_part_type == PRAGMA) && sql3status == SQLITE_DONE)
                 sql3status = SQLITE_ROW;
 
-            switch(sql3status)
+            // Are we querying some sort of data? Or are we setting some data?
+            if(query_part_type == SELECT || query_part_type == EXPLAIN || (query_part_type == PRAGMA && !queryPart.contains('=')))
             {
-            case SQLITE_ROW:
-            {
+                // We're querying data. This means we can stop execution here and hand it over to the model
+                sqlite3_finalize(vm);
+
                 sqlWidget->getModel()->setQuery(queryPart);
                 if(sqlWidget->getModel()->valid())
                 {
@@ -1095,28 +1095,20 @@ void MainWindow::executeQuery()
                     statusMessage = tr("Error executing query: %1").arg(queryPart);
                     sql3status = SQLITE_ERROR;
                 }
-            }
-            case SQLITE_DONE:
-            case SQLITE_OK:
-            {
-                if(query_part_type != SELECT)
-                {
-                    modified = true;
+            } else {
+                // We're setting data. This means we should continue execution here
+                sql3status = sqlite3_step(vm);
+                sqlite3_finalize(vm);
 
-                    QString stmtHasChangedDatabase;
-                    if(query_part_type == INSERT || query_part_type == UPDATE || query_part_type == DELETE)
-                        stmtHasChangedDatabase = tr(", %1 rows affected").arg(sqlite3_changes(db._db));
+                modified = true;
 
-                    statusMessage = tr("Query executed successfully: %1 (took %2ms%3)").arg(queryPart.trimmed()).arg(timer.elapsed()).arg(stmtHasChangedDatabase);
-                }
-                break;
+                QString stmtHasChangedDatabase;
+                if(query_part_type == INSERT || query_part_type == UPDATE || query_part_type == DELETE)
+                    stmtHasChangedDatabase = tr(", %1 rows affected").arg(sqlite3_changes(db._db));
+
+                statusMessage = tr("Query executed successfully: %1 (took %2ms%3)").arg(queryPart.trimmed()).arg(timer.elapsed()).arg(stmtHasChangedDatabase);
             }
-            case SQLITE_MISUSE:
-                continue;
-            default:
-                statusMessage = QString::fromUtf8((const char*)sqlite3_errmsg(db._db)) + ": " + queryPart;
-                break;
-            }
+
             timer.restart();
         } else {
             statusMessage = QString::fromUtf8((const char*)sqlite3_errmsg(db._db)) + ": " + queryPart;

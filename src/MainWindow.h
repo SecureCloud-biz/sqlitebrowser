@@ -142,6 +142,7 @@ private:
         UPDATE,
         DELETE,
         CREATE,
+        EXPLAIN,
         OTHER,
     };
 
